@@ -44,10 +44,22 @@ app.post("/signup", async (_req, res) => {
 
     if (!existingUser) {
       const newUser = await knex("users").insert({ email, password: hashedPw });
+      const newComapny = await knex("companies").insert({
+        name: companyName,
+        industry_id,
+      });
 
+      await knex("user_company").insert({
+        user_id: newUser.id,
+        company_id: newComapny.id,
+      });
       res
         .status(201)
-        .json({ message: "User successfully created", user: newUser });
+        .json({
+          message: "User successfully created",
+          user: newUser,
+          company: newComapny,
+        });
     } else {
       res.status(400).json({ error: "User already exists." });
     }
