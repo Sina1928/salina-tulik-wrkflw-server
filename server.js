@@ -31,7 +31,32 @@ app.get("/", (_req, res) => {
 });
 
 app.post("/signup", async (_req, res) => {
-  const { email, password } = _req.body;
+  const { email, password, companyName, industry_id } = _req.body;
+
+  // Manual Validation
+
+  const errors = {};
+
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    errors({ message: "Invalid email format." });
+  }
+
+  if (!password || password.length < 6) {
+    errors({ message: "Password must be greater than 6 characters long." });
+  }
+
+  if (!companyName || companyName.trim() === "") {
+    errors({ message: "Company name cannot be empty." });
+  }
+
+  if (!industry_id || isNaN(industry_id)) {
+    errors({ message: "Industry id must be a valid number." });
+  }
+
+  if (errors > 0) {
+    return res.status(400).json({ errors });
+  }
+
   const hashedPw = await bcrypt.hash(password, 10);
   try {
     const existingUser = await knex("users").where({ email }).first();
@@ -53,13 +78,11 @@ app.post("/signup", async (_req, res) => {
         user_id: newUser.id,
         company_id: newComapny.id,
       });
-      res
-        .status(201)
-        .json({
-          message: "User successfully created",
-          user: newUser,
-          company: newComapny,
-        });
+      res.status(201).json({
+        message: "User successfully created",
+        user: newUser,
+        company: newComapny,
+      });
     } else {
       res.status(400).json({ error: "User already exists." });
     }
@@ -76,9 +99,10 @@ passport.use(
       callbackURL: "http://localhost:3000/auth/google/callback",
     },
     async (accessToken, refreshToken, profile, done) => {
-      let user = await knex("users").where({ email }).first;
       try {
-        const user = await knex("users")
+        let user = await knex("users").where({ email }).first;
+
+        user = await knex("users")
           .where({ email })
           .update({ accessToken, refreshToken });
         if (user && !user.googleId) {
