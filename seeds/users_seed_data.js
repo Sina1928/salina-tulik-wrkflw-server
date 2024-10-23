@@ -13,7 +13,6 @@ exports.seed = async function (knex) {
       google_id: null,
       first_name: "Annie",
       last_name: "Smith",
-      company_id: 1,
     },
     {
       id: 2,
@@ -22,7 +21,6 @@ exports.seed = async function (knex) {
       google_id: null,
       first_name: "Janice",
       last_name: "McCleod",
-      company_id: 2,
     },
     {
       id: 3,
@@ -31,8 +29,6 @@ exports.seed = async function (knex) {
       google_id: null,
       first_name: "Carlo",
       last_name: "Fernandez",
-
-      company_id: 1,
     },
     {
       id: 4,
@@ -41,7 +37,6 @@ exports.seed = async function (knex) {
       google_id: null,
       first_name: "Harleen",
       last_name: "Singh",
-      company_id: 3,
     },
   ]);
 };
