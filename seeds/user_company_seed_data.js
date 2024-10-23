@@ -2,7 +2,7 @@
  * @param { import("knex").Knex } knex
  * @returns { Promise<void> }
  */
-exports.seed = async function (knex) {
+export async function seed(knex) {
   // Deletes ALL existing entries
   await knex("user_company").del();
   await knex("user_company").insert([
@@ -11,4 +11,4 @@ exports.seed = async function (knex) {
     { user_id: 3, company_id: 3, role: "Employee" },
     { user_id: 2, company_id: 3, role: "Manager" },
   ]);
-};
+}

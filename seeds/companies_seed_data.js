@@ -2,7 +2,7 @@
  * @param { import("knex").Knex } knex
  * @returns { Promise<void> }
  */
-exports.seed = async function (knex) {
+export async function seed(knex) {
   // Deletes ALL existing entries
   await knex("companies").del();
   await knex("companies").insert([
@@ -31,4 +31,4 @@ exports.seed = async function (knex) {
       industry_id: 2,
     },
   ]);
-};
+}

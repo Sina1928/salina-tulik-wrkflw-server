@@ -2,7 +2,7 @@
  * @param { import("knex").Knex } knex
  * @returns { Promise<void> }
  */
-exports.seed = async function (knex) {
+export async function seed(knex) {
   // Deletes ALL existing entries
   await knex("business_requirements_components").del();
   await knex("business_requirements_components").insert([
@@ -26,4 +26,4 @@ exports.seed = async function (knex) {
     { business_requirement_id: 3, component_id: 9 }, // Beauty Industry / Inventory Management
     { business_requirement_id: 3, component_id: 10 }, // Beauty Industry / Client Relationship Management (CRM)
   ]);
-};
+}
