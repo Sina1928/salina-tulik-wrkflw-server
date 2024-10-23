@@ -1,5 +1,5 @@
 import express from "express";
-import { validateSignup, validateLogin } from "../middleware/validation.js";
+// import { validateSignup, validateLogin } from "../middleware/validation.js";
 import { generateToken } from "../config/jwt.js";
 import bcrypt from "bcrypt";
 
