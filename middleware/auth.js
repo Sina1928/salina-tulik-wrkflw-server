@@ -1,4 +1,4 @@
-import { verifyToken } from "../config/jwt";
+import { verifyToken } from "../config/jwt.js";
 
 export const authenticateJWT = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -16,4 +16,11 @@ export const authenticateJWT = (req, res, next) => {
   } catch (err) {
     return res.status(401).json({ error: "Invalid token" });
   }
+};
+
+export const isAdmin = (req, res, next) => {
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({ error: "Requires admin access" });
+  }
+  next();
 };

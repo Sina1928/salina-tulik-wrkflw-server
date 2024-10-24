@@ -1,10 +1,14 @@
 import express from "express";
+import passport from "passport";
 // import { validateSignup, validateLogin } from "../middleware/validation.js";
 import { generateToken } from "../config/jwt.js";
 import bcrypt from "bcrypt";
 
-app.post("/signup", async (_req, res) => {
-  const { email, password, companyName, industry_id } = _req.body;
+const router = express.Router();
+
+router.post("/signup", async (_req, res) => {
+  const { email, password, firstName, lastName, companyName, industryId } =
+    _req.body;
 
   // Manual Validation
 
@@ -22,51 +26,80 @@ app.post("/signup", async (_req, res) => {
     errors({ message: "Company name cannot be empty." });
   }
 
-  if (!industry_id || isNaN(industry_id)) {
+  if (!industryId || isNaN(industryId)) {
     errors({ message: "Industry id must be a valid number." });
   }
 
-  if (errors > 0) {
+  if (Object.keys(errors).length > 0) {
     return res.status(400).json({ errors });
   }
 
-  const hashedPw = await bcrypt.hash(password, 10);
+  const trx = await knex.transaction();
+
   try {
-    const existingUser = await knex("users").where({ email }).first();
-    if (existingUser && existingUser.googleId) {
+    const existingUser = await trx("users").where({ email }).first();
+
+    if (existingUser) {
+      await trx.rollback();
       return res.status(400).json({
-        error:
-          "User already exists under a Google account. Please login with your Google account or select 'Forgot Email/Password'.",
+        error: existingUser.googleId
+          ? "User already exists with Google Account. Please login with Google."
+          : "User already exists.",
       });
     }
 
-    if (!existingUser) {
-      const newUser = await knex("users").insert({ email, password: hashedPw });
-      const newComapny = await knex("companies").insert({
+    const hashedPw = await bcrypt.hash(password, 10);
+
+    const [user] = await trx("users")
+      .insert({
+        email,
+        password: hashedPw,
+        firstName,
+        lastName,
+        created_at: trx.fn.now(),
+      })
+      .returning("*");
+
+    const [company] = await trx("companies")
+      .insert({
         name: companyName,
-        industry_id,
-      });
+        industry_id: industryId,
+        created_at: trx.fn.now(),
+      })
+      .returning("*");
 
-      await knex("user_company").insert({
-        user_id: newUser.id,
-        company_id: newComapny.id,
-      });
-      res.status(201).json({
-        message: "User successfully created",
-        user: newUser,
-        company: newComapny,
-      });
-    } else {
-      res.status(400).json({ error: "User already exists." });
-    }
+    await trx("user_company").insert({
+      user_id: user.id,
+      company_id: company.id,
+      role: "owner",
+    });
+
+    await trx.commit();
+
+    const token = generateToken(user);
+    res.status(201).json({
+      message: "Account successfully created",
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      },
+      company: {
+        id: company.id,
+        name: company.name,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ error: "Error creating user: ", err });
+    await trx.rollback();
+    console.error("Signup error: ", err);
+    res.status(500).json({ error: "Error creating user: " });
   }
 });
 
-app.post("/login", async (req, res) => {
+router.post("/login", async (req, res) => {
   const { email, password } = req.body;
-  const isPasswordValid = await bcrypt.compare(password, user.password);
 
   try {
     const user = await knex("users").where({ email }).first();
@@ -77,27 +110,51 @@ app.post("/login", async (req, res) => {
         .json({ message: "No user found. Invalid credentials." });
     }
 
+    if (user.googleId && !user.password) {
+      return res.status(400).json({ error: "Please log in with Google." });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
     if (!isPasswordValid) {
       return res.status(400).json({ message: "Password Invalid" });
     }
 
-    req.session.user = user;
+    const token = generateToken(user);
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ message: "Server error: ", err });
+    console.error("Login error: ", err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-app.get(
-  "/auth/google",
+router.get(
+  "/google",
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
 
-app.get(
-  "/auth/google/callback",
-  passport.authenticate("google", { failureRedirect: "/" }),
-  (_req, res) => {
+router.get(
+  "/google/callback",
+  passport.authenticate("google", { failureRedirect: "/login" }),
+  (req, res) => {
+    const token = generateToken(req.user);
     res.redirect("/dashboard");
   }
 );
 
-export default Router;
+router.get("/logout", (req, res) => {
+  req.logout();
+  res.redirect("/");
+  res.json({ message: "Logged out successfully" });
+});
+
+export default router;
