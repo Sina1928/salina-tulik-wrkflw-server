@@ -1,5 +1,8 @@
 import express from "express";
 const router = express.Router();
+import initKnex from "knex";
+import configuration from "../knexfile.js";
+const knex = initKnex(configuration);
 
 router.get("", async (_req, res) => {
   try {
@@ -23,11 +26,11 @@ router.get("/:id/components", async (req, res) => {
       .join(
         "business_requirements_components",
         "components.id",
-        "business_requirements_components.components_id"
+        "business_requirements_components.component_id"
       )
       .join(
         "business_requirements",
-        "business_requirements_components.business_requirements_id",
+        "business_requirements_components.business_requirement_id",
         "business_requirements.id"
       )
       .where("business_requirements.industry_id", id);
