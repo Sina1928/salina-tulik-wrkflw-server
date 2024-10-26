@@ -17,6 +17,7 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:";
 
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 app.use(express.static("public"));
+app.use("/uploads", express.static("uploads"));
 app.use(express.json());
 
 const configuredPassport = configurePassport(knex);

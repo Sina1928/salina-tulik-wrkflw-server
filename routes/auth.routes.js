@@ -3,38 +3,81 @@ import passport from "passport";
 // import { validateSignup, validateLogin } from "../middleware/validation.js";
 import { generateToken } from "../config/jwt.js";
 import bcrypt from "bcrypt";
+import multer from "multer";
+import initKnex from "knex";
+import configuration from "../knexfile.js";
+import { v4 as uuid4 } from "uuid";
 
 const router = express.Router();
+const knex = initKnex(configuration);
 
-router.post("/signup", async (_req, res) => {
-  const { email, password, firstName, lastName, companyName, industryId } =
-    _req.body;
+const storage = multer.diskStorage({
+  destination: (_req, file, cb) => {
+    cb(null, "uploads/logos");
+  },
+  filename: (_req, file, cb) => {
+    const uniqueFileName = `${uuid4()}-${file.originalname}`;
+    cb(null, uniqueFileName);
+  },
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid file type"));
+    }
+  },
+});
+
+router.post("/signup", upload.single("logoUrl"), async (_req, res) => {
+  const trx = await knex.transaction();
+
+  const {
+    email,
+    password,
+    firstName,
+    lastName,
+    companyName,
+    // companyAddress,
+    industryId,
+    websiteUrl,
+    themeColor,
+    selectedComponents,
+    // role = "owner",
+  } = _req.body;
 
   // Manual Validation
 
   const errors = {};
 
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-    errors({ message: "Invalid email format." });
+    return res.status(400).json({ message: "Invalid email format." });
   }
 
   if (!password || password.length < 6) {
-    errors({ message: "Password must be greater than 6 characters long." });
+    return res
+      .status(400)
+      .json({ message: "Password must be greater than 6 characters long." });
   }
 
   if (!companyName || companyName.trim() === "") {
-    errors({ message: "Company name cannot be empty." });
+    return res.status(400).json({ message: "Company name cannot be empty." });
   }
 
   if (!industryId || isNaN(industryId)) {
-    errors({ message: "Industry id must be a valid number." });
+    return res
+      .status(400)
+      .json({ message: "Industry id must be a valid number." });
   }
 
   if (Object.keys(errors).length > 0) {
     return res.status(400).json({ errors });
   }
-
-  const trx = await knex.transaction();
 
   try {
     const existingUser = await trx("users").where({ email }).first();
@@ -48,14 +91,17 @@ router.post("/signup", async (_req, res) => {
       });
     }
 
+    const logoFile = _req.file;
+    // ? `/uploads/logos/${_req.file.filename}` : null;
+
     const hashedPw = await bcrypt.hash(password, 10);
 
     const [user] = await trx("users")
       .insert({
         email,
         password: hashedPw,
-        firstName,
-        lastName,
+        first_name: firstName,
+        last_name: lastName,
         created_at: trx.fn.now(),
       })
       .returning("*");
@@ -63,6 +109,10 @@ router.post("/signup", async (_req, res) => {
     const [company] = await trx("companies")
       .insert({
         name: companyName,
+        // address: companyAddress,
+        website_url: websiteUrl,
+        logo_url: logoFile?.path,
+        theme_color: themeColor,
         industry_id: industryId,
         created_at: trx.fn.now(),
       })
@@ -71,8 +121,18 @@ router.post("/signup", async (_req, res) => {
     await trx("user_company").insert({
       user_id: user.id,
       company_id: company.id,
-      role: "owner",
+      role: "admin",
     });
+
+    if (selectedComponents?.length > 0) {
+      await trx("company_components").insert(
+        selectedComponents.map((componentId) => ({
+          company_id: company.id,
+          component_id: componentId,
+          status: "active",
+        }))
+      );
+    }
 
     await trx.commit();
 
@@ -83,12 +143,8 @@ router.post("/signup", async (_req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-      },
-      company: {
-        id: company.id,
-        name: company.name,
+        firstName: user.first_name,
+        lastName: user.last_name,
       },
     });
   } catch (err) {
@@ -99,10 +155,36 @@ router.post("/signup", async (_req, res) => {
 });
 
 router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
-
   try {
-    const user = await knex("users").where({ email }).first();
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ message: "Email and password are required" });
+    }
+
+    // const user = await knex("users").where({ email }).first();
+
+    const user = await knex("users")
+      .select([
+        "users.*",
+        "companies.id as company_id",
+        "companies.name as company_name",
+        "companies.logo_url",
+        "companies.theme_color",
+        "companies.industry_id",
+        "business_requirements_components.component_id",
+      ])
+      .where("users.email", email)
+      .leftJoin("user_company", "users.id", "user_company.user_id")
+      .leftJoin("companies", "user_company.company_id", "companies.id")
+      .leftJoin(
+        "business_requirements_components",
+        "companies.id",
+        "business_requirements_components.company_id"
+      )
+      .first();
 
     if (!user) {
       return res
@@ -117,23 +199,55 @@ router.post("/login", async (req, res) => {
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
-      return res.status(400).json({ message: "Password Invalid" });
+      return res.status(400).json({ message: "Invalid Password" });
     }
+
+    const userCompanyCount = await knex("user_company")
+      .where("user_id", user.id)
+      .count("company_id as count")
+      .first();
+
+    const userCompanies =
+      userCompanyCount > 1
+        ? await knex("companies")
+            .select([
+              "companies.id",
+              "companies.name",
+              "companies.logo_url",
+              "companies.theme_color",
+              "companies.industry_id",
+            ])
+            .join("user_company", "companies.id")
+            .where("user_company.user_id", user.id)
+        : [];
+
+    const components = await knex("business_requirements_components")
+      .select("component_id")
+      .where("company_id", user.company_id);
 
     const token = generateToken(user);
 
-    res.json({
+    return res.status(200).json({
       token,
       user: {
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        firstName: user.first_name,
       },
+      company: {
+        id: user.company_id,
+        name: user.company_name,
+        logoUrl: user.logo_url,
+        themeColor: user.theme_color,
+        industryId: user.industry_id,
+        compnentIds: components.map((component) => component.component_id),
+      },
+      multipleCompanies: userCompanyCount > 1,
+      companies: userCompanies,
     });
   } catch (err) {
     console.error("Login error: ", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error occured during login" });
   }
 });
 
