@@ -12,7 +12,7 @@ const router = express.Router();
 const knex = initKnex(configuration);
 
 const storage = multer.diskStorage({
-  destination: (_req, file, cb) => {
+  destination: (_req, _file, cb) => {
     cb(null, "uploads/logos");
   },
   filename: (_req, file, cb) => {
@@ -50,6 +50,11 @@ router.post("/signup", upload.single("logoUrl"), async (_req, res) => {
     selectedComponents,
     // role = "owner",
   } = _req.body;
+
+  const componentsArray =
+    typeof selectedComponents === "string"
+      ? JSON.parse(selectedComponents)
+      : selectedComponents;
 
   // Manual Validation
 
@@ -91,52 +96,76 @@ router.post("/signup", upload.single("logoUrl"), async (_req, res) => {
       });
     }
 
-    const logoFile = _req.file;
+    const logoUrl = _req.file;
     // ? `/uploads/logos/${_req.file.filename}` : null;
 
     const hashedPw = await bcrypt.hash(password, 10);
 
-    const [user] = await trx("users")
-      .insert({
-        email,
-        password: hashedPw,
-        first_name: firstName,
-        last_name: lastName,
-        created_at: trx.fn.now(),
-      })
-      .returning("*");
+    const [userId] = await trx("users").insert({
+      email,
+      password: hashedPw,
+      first_name: firstName,
+      last_name: lastName,
+      created_at: trx.fn.now(),
+    });
 
-    const [company] = await trx("companies")
-      .insert({
-        name: companyName,
-        // address: companyAddress,
-        website_url: websiteUrl,
-        logo_url: logoFile?.path,
-        theme_color: themeColor,
-        industry_id: industryId,
-        created_at: trx.fn.now(),
-      })
-      .returning("*");
+    const [companyId] = await trx("companies").insert({
+      name: companyName,
+      // address: companyAddress,
+      website_url: websiteUrl,
+      logo_url: logoUrl?.path,
+      theme_color: themeColor,
+      industry_id: industryId,
+      created_at: trx.fn.now(),
+    });
 
     await trx("user_company").insert({
-      user_id: user.id,
-      company_id: company.id,
+      user_id: userId,
+      company_id: companyId,
       role: "admin",
     });
 
-    if (selectedComponents?.length > 0) {
-      await trx("company_components").insert(
-        selectedComponents.map((componentId) => ({
-          company_id: company.id,
-          component_id: componentId,
-          status: "active",
-        }))
-      );
+    if (componentsArray?.length > 0) {
+      await trx("company_components");
+      const addComponents = componentsArray.map((componentId) => ({
+        company_id: companyId,
+        component_id: componentId,
+        status: "active",
+      }));
+
+      await trx("company_components").insert(addComponents);
     }
 
     await trx.commit();
 
+    const user = await knex("users").where({ id: userId }).first();
+
+    const companyData = await knex("companies")
+      .select([
+        "companies.*",
+        knex.raw(
+          "GROUP_CONCAT(companyComponents.component_id) as component_ids"
+        ),
+      ])
+      .leftJoin(
+        "company_components as companyComponents",
+        "companies.id",
+        "companyComponents.company_id"
+      )
+      .where("companies.id", companyId)
+      .groupBy("companies.id")
+      .first();
+
+    if (companyData.component_ids) {
+      companyData.component_ids = companyData.component_ids
+        .split(",")
+        .map(Number);
+    } else {
+      companyData.component_ids = [];
+    }
+
     const token = generateToken(user);
+
     res.status(201).json({
       message: "Account successfully created",
       token,
@@ -146,6 +175,7 @@ router.post("/signup", upload.single("logoUrl"), async (_req, res) => {
         firstName: user.first_name,
         lastName: user.last_name,
       },
+      company: companyData,
     });
   } catch (err) {
     await trx.rollback();
