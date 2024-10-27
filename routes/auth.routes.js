@@ -156,13 +156,18 @@ router.post("/signup", upload.single("logoUrl"), async (_req, res) => {
       .groupBy("companies.id")
       .first();
 
-    if (companyData.component_ids) {
-      companyData.component_ids = companyData.component_ids
-        .split(",")
-        .map(Number);
-    } else {
-      companyData.component_ids = [];
-    }
+    //   const formattedCompany = {
+    //     id: companyData.id,
+    //     name: companyData.id,
+    //   }
+
+    // if (companyData.component_ids) {
+    //   companyData.component_ids = companyData.component_ids
+    //     .split(",")
+    //     .map(Number);
+    // } else {
+    //   companyData.component_ids = [];
+    // }
 
     const token = generateToken(user);
 
@@ -175,7 +180,14 @@ router.post("/signup", upload.single("logoUrl"), async (_req, res) => {
         firstName: user.first_name,
         lastName: user.last_name,
       },
-      company: companyData,
+      company: {
+        id: companyData.id,
+        name: companyData.name,
+        logoUrl: companyData.logo_url,
+        themeColor: companyData.theme_color,
+        industryId: companyData.industry_id,
+        componentIds: companyData.component_ids.split(",").map(Number),
+      },
     });
   } catch (err) {
     await trx.rollback();
@@ -194,27 +206,27 @@ router.post("/login", async (req, res) => {
         .json({ message: "Email and password are required" });
     }
 
-    // const user = await knex("users").where({ email }).first();
+    const user = await knex("users").where({ email }).first();
 
-    const user = await knex("users")
-      .select([
-        "users.*",
-        "companies.id as company_id",
-        "companies.name as company_name",
-        "companies.logo_url",
-        "companies.theme_color",
-        "companies.industry_id",
-        "business_requirements_components.component_id",
-      ])
-      .where("users.email", email)
-      .leftJoin("user_company", "users.id", "user_company.user_id")
-      .leftJoin("companies", "user_company.company_id", "companies.id")
-      .leftJoin(
-        "business_requirements_components",
-        "companies.id",
-        "business_requirements_components.company_id"
-      )
-      .first();
+    // const user = await knex("users")
+    //   .select([
+    //     "users.*",
+    //     "companies.id as company_id",
+    //     "companies.name as company_name",
+    //     "companies.logo_url",
+    //     "companies.theme_color",
+    //     "companies.industry_id",
+    //     "business_requirements_components.component_id",
+    //   ])
+    //   .where("users.email", email)
+    //   .leftJoin("user_company", "users.id", "user_company.user_id")
+    //   .leftJoin("companies", "user_company.company_id", "companies.id")
+    //   .leftJoin(
+    //     "business_requirements_components",
+    //     "companies.id",
+    //     "business_requirements_components.company_id"
+    //   )
+    //   .first();
 
     if (!user) {
       return res
@@ -232,28 +244,72 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid Password" });
     }
 
-    const userCompanyCount = await knex("user_company")
-      .where("user_id", user.id)
-      .count("company_id as count")
+    // const userCompanyCount = await knex("user_company")
+    //   .where("user_id", user.id)
+    //   .count("company_id as count")
+    //   .first();
+
+    // const userCompanies =
+    //   userCompanyCount > 1
+    //     ? await knex("companies")
+    //         .select([
+    //           "companies.id",
+    //           "companies.name",
+    //           "companies.logo_url",
+    //           "companies.theme_color",
+    //           "companies.industry_id",
+    //         ])
+    //         .join("user_company", "companies.id")
+    //         .where("user_company.user_id", user.id)
+    //     : [];
+
+    // const components = await knex("business_requirements_components")
+    //   .select("component_id")
+    //   .where("company_id", user.company_id);
+
+    const userCompanies = await knex("companies")
+      .select([
+        "companies.*",
+        knex.raw(
+          "GROUP_CONCAT(companyComponents.component_id) as componentIds"
+        ),
+      ])
+      .leftJoin("user_company", "companies.id", "user_company.company_id")
+      .leftJoin(
+        "company_components as companyComponents",
+        "companies.id",
+        "companyComponents.company_id"
+      )
+      .where("user_company.user_id", user.id)
+      .groupBy("companies.id");
+
+    const primaryCompany = await knex("companies")
+      .select([
+        "companies.*",
+        knex.raw(
+          "GROUP_CONCAT(companyComponents.component_id) as componentIds"
+        ),
+      ])
+      .leftJoin("user_company", "companies.id", "user_company.company_id")
+      .leftJoin(
+        "company_components as companyComponents",
+        "companies.id",
+        "companyComponents.company_id"
+      )
+      .where("user_company.user_id", user.id)
+      .groupBy("companies.id")
       .first();
 
-    const userCompanies =
-      userCompanyCount > 1
-        ? await knex("companies")
-            .select([
-              "companies.id",
-              "companies.name",
-              "companies.logo_url",
-              "companies.theme_color",
-              "companies.industry_id",
-            ])
-            .join("user_company", "companies.id")
-            .where("user_company.user_id", user.id)
-        : [];
-
-    const components = await knex("business_requirements_components")
-      .select("component_id")
-      .where("company_id", user.company_id);
+    const formattedCompanies = userCompanies.map((company) => ({
+      id: company.id,
+      name: company.name,
+      logoUrl: company.logo_url,
+      themeColor: company.theme_color,
+      industryId: company.industry_id,
+      componentIds: company.componentIds
+        ? company.componentIds.split(",").map(Number)
+        : [],
+    }));
 
     const token = generateToken(user);
 
@@ -265,15 +321,17 @@ router.post("/login", async (req, res) => {
         firstName: user.first_name,
       },
       company: {
-        id: user.company_id,
-        name: user.company_name,
-        logoUrl: user.logo_url,
-        themeColor: user.theme_color,
-        industryId: user.industry_id,
-        compnentIds: components.map((component) => component.component_id),
+        id: primaryCompany.id,
+        name: primaryCompany.name,
+        logoUrl: primaryCompany.logo_url,
+        themeColor: primaryCompany.theme_color,
+        industryId: primaryCompany.industry_id,
+        componentIds: primaryCompany.componentIds
+          ? primaryCompany.componentIds.split(",").map(Number)
+          : [],
       },
-      multipleCompanies: userCompanyCount > 1,
-      companies: userCompanies,
+      multipleCompanies: userCompanies > 1,
+      companies: formattedCompanies,
     });
   } catch (err) {
     console.error("Login error: ", err);
