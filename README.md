@@ -3,4 +3,4 @@
 3. Companies belong to industries, so there is an industry_id in the companies table as a foreign key
 4. Business requirements are related to industries so there is also an industry_id in the business requirements table
 5. Components are related to business requirements there is also a business_requirements_components junction table
-   ![db-relationships-diagram](db-relationships-diagram.png)
+   ![db-relationships-diagram](updated_db_diagram.png)
