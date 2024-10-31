@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import companyRoutes from "./routes/company.routes.js";
 import industryRoutes from "./routes/industry.routes.js";
+import dashboardRoutes from "./routes/dashboard.routes.js";
 import { authenticateJWT } from "./middleware/auth.js";
 import { configurePassport } from "./config/passport.js";
 import passport from "passport";
@@ -31,6 +32,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", authenticateJWT, userRoutes);
 app.use("/api/companies", authenticateJWT, companyRoutes);
 app.use("/api/industries", industryRoutes);
+app.use("/api/dashboard", authenticateJWT, dashboardRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on ${BACKEND_URL}${PORT}`);
